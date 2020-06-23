@@ -3,17 +3,17 @@ use typenum::Unsigned;
 use fawkes_crypto::core::{signal::Signal, cs::ConstraintSystem, field::PrimeField, sizedvec::SizedVec};
 use fawkes_crypto::circuit::{
     num::CNum, bool::CBool,
-    poseidon::{c_poseidon_with_salt, c_poseidon_merkle_proof_root, c_poseidon_merkle_tree_root, CMerkleProof},
+    poseidon::{c_poseidon_with_salt, c_poseidon_merkle_proof_root, CMerkleProof},
     eddsaposeidon::{c_eddsaposeidon_verify},
     ecc::CEdwardsPoint,
-    bitify::{c_comp_constant, c_into_bits_le, c_into_bits_le_strict, c_from_bits_le}
+    bitify::{c_comp_constant, c_into_bits_le, c_into_bits_le_strict}
 };
 use fawkes_crypto::native::{num::Num, ecc::JubJubParams};
 
 
 
 use crate::native::transfer::{PoolParams, Note, TxPub, TxSec};
-use crate::constants::{SEED_DIVERSIFIER, SEED_DECRYPTION_KEY, SEED_IN_NOTE_HASH, SEED_OUT_NOTE_HASH, SEED_TX_HASH, SEED_NULLIFIER, SEED_NOTE_HASH};
+use crate::constants::{SEED_DIVERSIFIER, SEED_DECRYPTION_KEY, SEED_TX_HASH, SEED_NULLIFIER, SEED_NOTE_HASH};
 
 #[derive(Clone, Signal)]
 #[Value="Note<CS::F>"]
@@ -30,7 +30,6 @@ pub struct CNote<'a, CS:ConstraintSystem> {
 pub struct CTxPub<'a, CS:ConstraintSystem, P:PoolParams<F=CS::F>> {
     pub root: CNum<'a, CS>,
     pub nullifier: SizedVec<CNum<'a, CS>, P::IN>,
-    pub out_note_hash_root: CNum<'a, CS>,
     pub out_hash: SizedVec<CNum<'a, CS>, P::OUT>,
     pub delta: CNum<'a, CS>,
     pub memo: CNum<'a, CS>
@@ -72,9 +71,8 @@ pub fn c_tx_hash<'a, CS:ConstraintSystem, P:PoolParams<F=CS::F>>(
     out_note_hash: &[CNum<'a, CS>],
     params:&P
 ) -> CNum<'a, CS> {
-    let in_h = c_poseidon_with_salt(in_note_hash, SEED_IN_NOTE_HASH, params.tx_in());
-    let out_h = c_poseidon_with_salt(out_note_hash, SEED_OUT_NOTE_HASH, params.tx_out());
-    c_poseidon_with_salt([in_h, out_h].as_ref(), SEED_TX_HASH, params.compress())
+    let notes = in_note_hash.iter().chain(out_note_hash.iter()).cloned().collect::<Vec<_>>();
+    c_poseidon_with_salt(&notes, SEED_TX_HASH, params.compress())
 }
 
 pub fn c_parse_delta<'a, CS:ConstraintSystem>(
@@ -140,9 +138,6 @@ pub fn c_tx<'a, CS:ConstraintSystem, P:PoolParams<F=CS::F>>(
 
     //bind msg_hash to the circuit
     (&p.memo+Num::one()).assert_nonzero();
-
-    //build out hash root
-    (&p.out_note_hash_root-c_poseidon_merkle_tree_root(&p.out_hash.0, params.compress())).assert_zero();
 
     //build tx hash
     let tx_hash = c_tx_hash(&in_hash, &p.out_hash.0, params);

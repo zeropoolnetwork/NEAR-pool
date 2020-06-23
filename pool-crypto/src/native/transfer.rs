@@ -12,7 +12,7 @@ use num_traits::Num as NumTrait;
 use typenum::Unsigned;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use crate::constants::{SEED_DIVERSIFIER, SEED_DECRYPTION_KEY, SEED_IN_NOTE_HASH, SEED_OUT_NOTE_HASH, SEED_TX_HASH, SEED_NULLIFIER, SEED_NOTE_HASH};
+use crate::constants::{SEED_DIVERSIFIER, SEED_DECRYPTION_KEY, SEED_TX_HASH, SEED_NULLIFIER, SEED_NOTE_HASH};
 
 use bellman::pairing::bn256::Fr;
 
@@ -88,12 +88,17 @@ pub struct Note<F:Field> {
     pub st: Num<F>
 }
 
+#[derive(Debug, Clone)]
+pub struct Tx<P:PoolParams> {
+    pub input: SizedVec<Note<P::F>, P::IN>,
+    pub output: SizedVec<Note<P::F>, P::OUT>
+}
+
 
 #[derive(Debug, Clone)]
 pub struct TxPub<P:PoolParams> {
     pub root: Num<P::F>,
     pub nullifier: SizedVec<Num<P::F>, P::IN>,
-    pub out_note_hash_root: Num<P::F>,
     pub out_hash: SizedVec<Num<P::F>, P::OUT>,
     pub delta: Num<P::F>,
     pub memo: Num<P::F>
@@ -121,9 +126,8 @@ pub fn note_hash<P:PoolParams>(note: Note<P::F>, params: &P) -> Num<P::F> {
 }
 
 pub fn tx_hash<P:PoolParams>(in_note_hash: &[Num<P::F>], out_note_hash: &[Num<P::F>], params:&P) -> Num<P::F> {
-    let in_h = poseidon_with_salt(&in_note_hash, SEED_IN_NOTE_HASH, params.tx_in());
-    let out_h = poseidon_with_salt(&out_note_hash, SEED_OUT_NOTE_HASH, params.tx_out());
-    poseidon_with_salt(&[in_h, out_h], SEED_TX_HASH, params.compress())
+    let notes = in_note_hash.iter().chain(out_note_hash.iter()).cloned().collect::<Vec<_>>();
+    poseidon_with_salt(&notes, SEED_TX_HASH, params.compress())
 }
 
 pub fn parse_delta<F:Field>(delta:Num<F>) -> Num<F> {
