@@ -11,8 +11,11 @@ pub mod circuit;
 pub mod native;
 pub mod constants;
 
+use crate::native::gen_test_data::gen_test_data;
+
 use crate::{
-    native::tx::{PoolBN256}
+    circuit::tx::{CTransferPub, CTransferSec, c_transfer},
+    native::tx::{TransferPub, TransferSec, PoolBN256}
 };
 
 use typenum::{U6, U2, U32, Unsigned};
@@ -29,7 +32,7 @@ pub type OUT = U2;
 pub type H = U32;
 
 lazy_static! {
-    pub static ref POOL_PARAMS: PoolBN256<JubJubBN256, IN, OUT, H>  = PoolBN256::<JubJubBN256, IN, OUT, H> {
+    pub static ref POOL_PARAMS: PoolBN256<JubJubBN256, IN, OUT, H> = PoolBN256::<JubJubBN256, IN, OUT, H> {
         jubjub:JubJubBN256::new(),
         hash: PoseidonParams::<Fr>::new(2, 8, 53),
         compress: PoseidonParams::<Fr>::new(3, 8, 53),
@@ -39,4 +42,11 @@ lazy_static! {
         phantom: PhantomData
     };
 
+}
+
+
+groth16_near_bindings!(cli, TransferPub<PoolBN256<JubJubBN256, IN, OUT, H>>, CTransferPub, TransferSec<PoolBN256<JubJubBN256, IN, OUT, H>>, CTransferSec, POOL_PARAMS, c_transfer, gen_test_data);
+
+fn main() {
+    cli::cli_main()
 }

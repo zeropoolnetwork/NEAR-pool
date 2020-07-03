@@ -1,6 +1,7 @@
 use fawkes_crypto::native::{
-    num::Num, ecc::JubJubParams,
-    poseidon::{PoseidonParams, MerkleProof, poseidon_with_salt}
+    num::Num, ecc::{JubJubParams, EdwardsPoint},
+    poseidon::{PoseidonParams, MerkleProof, poseidon_with_salt},
+    eddsaposeidon::{eddsaposeidon_sign, eddsaposeidon_verify}
 };
 
 use fawkes_crypto::core::{
@@ -27,8 +28,7 @@ pub trait PoolParams : Clone+Sized {
     fn hash(&self) -> &PoseidonParams<Self::F>;
     fn compress(&self) -> &PoseidonParams<Self::F>;
     fn note(&self) -> &PoseidonParams<Self::F>;
-    fn tx_in(&self) -> &PoseidonParams<Self::F>;
-    fn tx_out(&self) -> &PoseidonParams<Self::F>;
+    fn tx(&self) -> &PoseidonParams<Self::F>;
     fn eddsa(&self) -> &PoseidonParams<Self::F>;
 }
 
@@ -38,8 +38,7 @@ pub struct PoolBN256<J:JubJubParams<Fr=Fr>, IN:Unsigned, OUT:Unsigned, H:Unsigne
     pub hash: PoseidonParams<Fr>,
     pub compress: PoseidonParams<Fr>,
     pub note: PoseidonParams<Fr>,
-    pub tx_in: PoseidonParams<Fr>,
-    pub tx_out: PoseidonParams<Fr>,
+    pub tx: PoseidonParams<Fr>,
     pub eddsa: PoseidonParams<Fr>,
     pub phantom: PhantomData<(IN, OUT, H)>
 }
@@ -67,12 +66,8 @@ impl<J:JubJubParams<Fr=Fr>, IN:Unsigned, OUT:Unsigned, H:Unsigned> PoolParams fo
         &self.note
     }
 
-    fn tx_in(&self) -> &PoseidonParams<Self::F> {
-        &self.tx_in
-    }
-
-    fn tx_out(&self) -> &PoseidonParams<Self::F> {
-        &self.tx_out
+    fn tx(&self) -> &PoseidonParams<Self::F> {
+        &self.tx
     }
 
     fn eddsa(&self) -> &PoseidonParams<Self::F> {
@@ -80,7 +75,8 @@ impl<J:JubJubParams<Fr=Fr>, IN:Unsigned, OUT:Unsigned, H:Unsigned> PoolParams fo
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(bound(serialize="", deserialize=""))]
 pub struct Note<F:Field> {
     pub d: Num<F>,
     pub pk_d: Num<F>,
@@ -88,15 +84,17 @@ pub struct Note<F:Field> {
     pub st: Num<F>
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(bound(serialize="", deserialize=""))]
 pub struct Tx<P:PoolParams> {
     pub input: SizedVec<Note<P::F>, P::IN>,
     pub output: SizedVec<Note<P::F>, P::OUT>
 }
 
 
-#[derive(Debug, Clone)]
-pub struct TxPub<P:PoolParams> {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(bound(serialize="", deserialize=""))]
+pub struct TransferPub<P:PoolParams> {
     pub root: Num<P::F>,
     pub nullifier: SizedVec<Num<P::F>, P::IN>,
     pub out_hash: SizedVec<Num<P::F>, P::OUT>,
@@ -104,12 +102,11 @@ pub struct TxPub<P:PoolParams> {
     pub memo: Num<P::F>
 }
 
-#[derive(Debug, Clone)]
-pub struct TxSec<P:PoolParams> {
-    pub in_note: SizedVec<Note<P::F>, P::IN>,
-    pub out_note: SizedVec<Note<P::F>, P::OUT>,
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(bound(serialize="", deserialize=""))]
+pub struct TransferSec<P:PoolParams> {
+    pub tx: Tx<P>,
     pub in_proof: SizedVec<MerkleProof<P::F,P::H>, P::IN>,
-    pub dk: Num<P::F>,
     pub eddsa_s: Num<P::F>,
     pub eddsa_r: Num<P::F>,
     pub eddsa_a: Num<P::F>
@@ -117,8 +114,8 @@ pub struct TxSec<P:PoolParams> {
 
 
 
-pub fn nullfifier<P:PoolParams>(note_hash:Num<P::F>, dk:Num<P::F>, params:&P) -> Num<P::F>{
-    poseidon_with_salt(&[note_hash, dk], SEED_NULLIFIER, params.compress())
+pub fn nullfifier<P:PoolParams>(note_hash:Num<P::F>, pk:Num<P::F>, params:&P) -> Num<P::F>{
+    poseidon_with_salt(&[note_hash, pk], SEED_NULLIFIER, params.compress())
 }
 
 pub fn note_hash<P:PoolParams>(note: Note<P::F>, params: &P) -> Num<P::F> {
@@ -127,7 +124,29 @@ pub fn note_hash<P:PoolParams>(note: Note<P::F>, params: &P) -> Num<P::F> {
 
 pub fn tx_hash<P:PoolParams>(in_note_hash: &[Num<P::F>], out_note_hash: &[Num<P::F>], params:&P) -> Num<P::F> {
     let notes = in_note_hash.iter().chain(out_note_hash.iter()).cloned().collect::<Vec<_>>();
-    poseidon_with_salt(&notes, SEED_TX_HASH, params.compress())
+    poseidon_with_salt(&notes, SEED_TX_HASH, params.tx())
+}
+
+pub fn tx_sign<P:PoolParams>(sk: Num<<P::J as JubJubParams>::Fs>, tx_hash:Num<P::F>, params:&P) -> (Num<<P::J as JubJubParams>::Fs>, Num<P::F>) {
+    eddsaposeidon_sign(sk, tx_hash, params.eddsa(), params.jubjub())
+}
+
+pub fn tx_verify<P:PoolParams>(s:Num<<P::J as JubJubParams>::Fs>, r:Num<P::F>, pk: Num<P::F>, tx_hash:Num<P::F>, params:&P) -> bool {
+    eddsaposeidon_verify(s, r, pk, tx_hash, params.eddsa(), params.jubjub())
+}
+
+pub fn derive_key_pk<P:PoolParams>(sk:Num<<P::J as JubJubParams>::Fs>, params:&P) -> Num<P::F> {
+    params.jubjub().edwards_g().mul(sk, params.jubjub()).x
+}
+
+pub fn derive_key_dk<P:PoolParams>(pk:Num<P::F>, params:&P) -> Num<<P::J as JubJubParams>::Fs> {
+    let t_dk = poseidon_with_salt(&[pk], SEED_DECRYPTION_KEY, params.hash());
+    t_dk.into_other::<<P::J as JubJubParams>::Fs>().into_other()
+}
+
+pub fn derive_key_pk_d<P:PoolParams>(d:Num<P::F>, dk:Num<<P::J as JubJubParams>::Fs>, params:&P) -> Num<P::F> {
+    let d_hash = poseidon_with_salt(&[d], SEED_DIVERSIFIER, params.hash());
+    EdwardsPoint::from_scalar(d_hash, params.jubjub()).mul(dk, params.jubjub()).x
 }
 
 pub fn parse_delta<F:Field>(delta:Num<F>) -> Num<F> {
