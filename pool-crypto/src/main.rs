@@ -32,7 +32,7 @@ pub type OUT = U2;
 pub type H = U32;
 
 lazy_static! {
-    pub static ref POOL_PARAMS: PoolBN256<JubJubBN256, IN, OUT, H> = PoolBN256::<JubJubBN256, IN, OUT, H> {
+    pub static ref POOL_PARAMS: PoolBN256<IN, OUT, H> = PoolBN256::<IN, OUT, H> {
         jubjub:JubJubBN256::new(),
         hash: PoseidonParams::<Fr>::new(2, 8, 53),
         compress: PoseidonParams::<Fr>::new(3, 8, 53),
@@ -45,7 +45,7 @@ lazy_static! {
 }
 
 
-groth16_near_bindings!(cli, TransferPub<PoolBN256<JubJubBN256, IN, OUT, H>>, CTransferPub, TransferSec<PoolBN256<JubJubBN256, IN, OUT, H>>, CTransferSec, POOL_PARAMS, c_transfer, gen_test_data);
+groth16_near_bindings!(cli, TransferPub<PoolBN256<IN, OUT, H>>, CTransferPub, TransferSec<PoolBN256<IN, OUT, H>>, CTransferSec, POOL_PARAMS, c_transfer, gen_test_data);
 
 fn main() {
     cli::cli_main()

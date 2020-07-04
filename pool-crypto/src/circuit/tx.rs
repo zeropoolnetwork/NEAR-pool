@@ -10,9 +10,10 @@ use fawkes_crypto::circuit::{
 };
 use fawkes_crypto::native::{num::Num, ecc::JubJubParams};
 
+use num::bigint::{BigUint};
+use num_traits::One;
 
-
-use crate::native::tx::{PoolParams, Note, TransferPub, TransferSec, Tx};
+use crate::native::tx::{PoolParams, Note, TransferPub, TransferSec, Tx, NOTE_CHUNKS};
 use crate::constants::{SEED_DIVERSIFIER, SEED_DECRYPTION_KEY, SEED_TX_HASH, SEED_NULLIFIER, SEED_NOTE_HASH};
 
 #[derive(Clone, Signal)]
@@ -111,8 +112,8 @@ pub fn c_derive_key_pk_d<'a, CS:ConstraintSystem, P:PoolParams<F=CS::F>>(d:&CNum
 pub fn c_parse_delta<'a, CS:ConstraintSystem>(
     delta:&CNum<'a, CS>
 ) -> CNum<'a, CS> {
-    let delta_bits = c_into_bits_le(delta, 128);
-    delta - &delta_bits[127].0 * num!("340282366920938463463374607431768211456")
+    let delta_bits = c_into_bits_le(delta, 64);
+    delta - &delta_bits[63].0 * num!(BigUint::one() << (NOTE_CHUNKS[2]*8))
 }
 
 
@@ -125,9 +126,9 @@ pub fn c_transfer<'a, CS:ConstraintSystem, P:PoolParams<F=CS::F>>(
 
     //check note value ranges
     for n in s.tx.input.iter().chain(s.tx.output.iter()) {
-        c_into_bits_le(&n.d, 80);
-        c_into_bits_le(&n.v, 64);
-        c_into_bits_le(&n.st, 80);
+        c_into_bits_le(&n.d, NOTE_CHUNKS[0]*8);
+        c_into_bits_le(&n.v, NOTE_CHUNKS[2]*8);
+        c_into_bits_le(&n.st, NOTE_CHUNKS[3]*8);
     }
 
     //build input hashes
