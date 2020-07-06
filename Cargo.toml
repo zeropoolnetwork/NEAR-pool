@@ -1,4 +1,5 @@
 [workspace]
 members = [
-  "pool-crypto"
+  "pool-crypto",
+  "pool-contract"
 ]

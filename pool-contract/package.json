@@ -1,0 +1,27 @@
+{
+  "name": "pool-contract",
+  "version": "1.0.0",
+  "description": "Compiles NEAR Protocol example of setting and retrieving a status message per NEAR account",
+  "scripts": {
+    "build": "cargo build --target wasm32-unknown-unknown --release",
+    "local-deploy": "near dev-deploy --wasmFile target/wasm32-unknown-unknown/release/pool-contract.wasm --masterAccount node0",
+    "local-update": "npm run build && npm run local-deploy"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zeropoolnetwork/near-groth16-verifier.git"
+  },
+  "keywords": [
+    "near-protocol",
+    "blockchain",
+    "rust",
+    "smart-contract"
+  ],
+  "author": "Igor Gulamov",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/zeropoolnetwork/NEAR-pool/issues"
+  },
+  "homepage": "https://github.com/zeropoolnetwork/NEAR-pool#readme",
+  "devDependencies": {}
+}
