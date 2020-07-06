@@ -11,7 +11,7 @@ pub mod circuit;
 pub mod native;
 pub mod constants;
 
-use crate::native::gen_test_data::gen_test_data;
+use crate::native::data::gen_test_data;
 
 use crate::{
     circuit::tx::{CTransferPub, CTransferSec, c_transfer},

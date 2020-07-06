@@ -11,7 +11,8 @@ use fawkes_crypto::circuit::{
 use fawkes_crypto::native::{num::Num, ecc::JubJubParams};
 
 use num::bigint::{BigUint};
-use num_traits::One;
+use num::One;
+
 
 use crate::native::tx::{PoolParams, Note, TransferPub, TransferSec, Tx, NOTE_CHUNKS};
 use crate::constants::{SEED_DIVERSIFIER, SEED_DECRYPTION_KEY, SEED_TX_HASH, SEED_NULLIFIER, SEED_NOTE_HASH};
@@ -57,10 +58,10 @@ pub struct CTransferSec<'a, CS:ConstraintSystem, P:PoolParams<F=CS::F>> {
 
 pub fn c_nullfifier<'a, CS:ConstraintSystem, P:PoolParams<F=CS::F>>(
     note_hash:&CNum<'a, CS>,
-    dk:&CNum<'a, CS>,
+    pk:&CNum<'a, CS>,
     params:&P,
 ) -> CNum<'a, CS>{
-    c_poseidon_with_salt([note_hash.clone(), dk.clone()].as_ref(), SEED_NULLIFIER, params.compress())
+    c_poseidon_with_salt([note_hash.clone(), pk.clone()].as_ref(), SEED_NULLIFIER, params.compress())
 }
 
 pub fn c_note_hash<'a, CS:ConstraintSystem, P:PoolParams<F=CS::F>>(

@@ -8,8 +8,10 @@ use fawkes_crypto::core::{
     sizedvec::SizedVec,
     field::{Field, PrimeField}
 };
-use num::bigint::{BigUint};
-use num_traits::One;
+use num::bigint::{BigUint, BigInt};
+use num::bigint::Sign;
+
+use num::{One, Zero};
 use typenum::Unsigned;
 use std::fmt::Debug;
 use std::marker::PhantomData;
@@ -324,20 +326,18 @@ pub fn parse_delta<F:Field>(delta:Num<F>) -> Num<F> {
     }
 }
 
+
+
 #[cfg(test)]
 mod tx_test {
     use super::*;
     use rand::{Rand, Rng, thread_rng};
     use num::BigUint;
-    use fawkes_crypto::native::bn256::{Fr, Fs};
+    use fawkes_crypto::native::bn256::{Fr};
     use crate::POOL_PARAMS;
+    use crate::native::data::rand_biguint;
 
-    fn rand_biguint<R:Rng>(rng: &mut R, bits:usize) -> BigUint {
-        let bytes = (bits-1)/8+1;
-        let mut v : Vec<u8> = (0..bytes).map(|_| rng.gen()).collect();
-        v[0] >>= bytes*8-bits;
-        BigUint::from_bytes_be(&v)
-    }
+
 
     impl Rand for Note<Fr> {
         fn rand<R: Rng>(rng: &mut R) -> Self {
