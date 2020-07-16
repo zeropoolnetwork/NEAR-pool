@@ -12,7 +12,7 @@ serde = { version = "*", features = ["derive"] }
 serde_json = "*"
 borsh = "*"
 #near-sdk = "0.10.0"
-near-sdk = { version = "0.11.0", path = "../near-sdk-rs/near-sdk"}
+near-sdk = { version = "1.0.0", path = "../../near-sdk-rs/near-sdk"}
 wee_alloc = { version = "0.4.5", default-features = false, features = [] }
 num = "0.2.1"
 
