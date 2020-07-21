@@ -34,13 +34,37 @@ impl Groth16Verifier {
         alt_bn128_groth16verify(vk, proof, input)
     }
 
-    pub fn groth16verify_log(&mut self, vk: Base64VecU8, proof:Base64VecU8, input:Base64VecU8) {
+    pub fn groth16verify_native(&self, vk: Base64VecU8, proof:Base64VecU8, input:Base64VecU8) -> u64 {
         let vk = VK::deserialize(&mut &Vec::<u8>::from(vk)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize vk."));
         let proof = Proof::deserialize(&mut &Vec::<u8>::from(proof)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize proof."));
-        let input = Vec::<Fr>::deserialize(&mut &Vec::<u8>::from(input)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize input."));        let res = alt_bn128_groth16verify(vk, proof, input);
+        let input = Vec::<Fr>::deserialize(&mut &Vec::<u8>::from(input)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize input."));
+        let res = alt_bn128_groth16verify(vk, proof, input);
+        if res {
+            env::used_gas()
+        } else {
+            0
+        }
+    }
+
+    pub fn groth16verify_log(&mut self, vk: Base64VecU8, proof:Base64VecU8, input:Base64VecU8) -> u64 {
+        let vk = VK::deserialize(&mut &Vec::<u8>::from(vk)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize vk."));
+        let proof = Proof::deserialize(&mut &Vec::<u8>::from(proof)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize proof."));
+        let input = Vec::<Fr>::deserialize(&mut &Vec::<u8>::from(input)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize input."));
+        let res = alt_bn128_groth16verify(vk, proof, input);
         self.res_calls.insert(&self.n_calls, &res);
         self.n_calls+=1;
+        env::used_gas()
     }
+
+    pub fn groth16verify_log_native(&mut self, vk: Base64VecU8, proof:Base64VecU8, input:Base64VecU8) -> u64{
+        let vk = VK::deserialize(&mut &Vec::<u8>::from(vk)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize vk."));
+        let proof = Proof::deserialize(&mut &Vec::<u8>::from(proof)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize proof."));
+        let input = Vec::<Fr>::deserialize(&mut &Vec::<u8>::from(input)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize input."));
+        let res = verifier::native::alt_bn128_groth16verify_native(vk, proof, input);
+        self.res_calls.insert(&self.n_calls, &res);
+        self.n_calls+=1;
+        env::used_gas()
+    }    
 
 }
 

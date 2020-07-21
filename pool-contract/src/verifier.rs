@@ -4,6 +4,7 @@ use num::BigUint;
 use core::str::FromStr;
 use near_sdk::env;
 
+
 #[derive(BorshDeserialize, BorshSerialize, Clone, Copy)]
 pub struct Fr(pub [u8;32]);
 
@@ -140,4 +141,63 @@ pub fn alt_bn128_groth16verify(vk:VK, proof:Proof, input:Vec<Fr>) -> bool {
 
     alt_bn128_pairing_check(pairing_expr)
     
+}
+
+
+pub mod native {
+    use super::*;
+    use bn_borsh::{BorshSerialize as _, BorshDeserialize as _};
+    use bn::{pairing_batch, Fr as _Fr, Group, Gt, G1 as _G1, G2 as _G2};
+
+    fn alt_bn128_g1_multiexp(items: &[(G1, Fr)]) -> G1 {
+        let ref items = <Vec<(_G1, _Fr)>>::try_from_slice(&items.to_vec().try_to_vec().unwrap()).unwrap();
+        let res = _G1::multiexp(items);
+        G1::try_from_slice(&res.try_to_vec().unwrap()).unwrap()
+    }
+
+    fn alt_bn128_g1_sum(items: &[(bool, G1)]) -> G1 {
+        let ref items = <Vec<(bool, _G1)>>::try_from_slice(&items.to_vec().try_to_vec().unwrap()).unwrap();
+        let mut acc = _G1::zero();
+        for &(sign, e) in items.iter() {
+            if sign {
+                acc = acc - e;
+            } else {
+                acc = acc + e;
+            }
+        }
+        let res = acc;
+        G1::try_from_slice(&res.try_to_vec().unwrap()).unwrap()
+    }
+
+    #[inline]
+    fn alt_bn128_g1_neg(p:G1) -> G1 {
+        let res = alt_bn128_g1_sum(&vec![(true, p)]);
+        G1::try_from_slice(&res.try_to_vec().unwrap()).unwrap()
+    }
+
+    fn alt_bn128_pairing_check(items: &[(G1, G2)]) -> bool {
+        let ref items = <Vec<(_G1, _G2)>>::try_from_slice(&items.to_vec().try_to_vec().unwrap()).unwrap();
+        pairing_batch(items) == Gt::one()
+    }
+
+    pub fn alt_bn128_groth16verify_native(vk:VK, proof:Proof, input:Vec<Fr>) -> bool {
+        if vk.ic.len() != input.len() + 1 {
+            env::panic(b"Wrong input len.");
+        }
+        let neg_a = alt_bn128_g1_neg(proof.a);
+        let acc_expr = vk.ic.iter().zip([FR_ONE].iter().chain(input.iter())).map(|(&base, &exp)| (base, exp)).collect::<Vec<_>>();
+        let acc = alt_bn128_g1_multiexp(&acc_expr);
+
+        let pairing_expr = vec![
+            (neg_a, proof.b),
+            (vk.alpha_g1, vk.beta_g2),
+            (acc, vk.gamma_g2),
+            (proof.c, vk.delta_g2),
+        ];
+
+        alt_bn128_pairing_check(&pairing_expr)
+        
+    }
+    
+
 }
