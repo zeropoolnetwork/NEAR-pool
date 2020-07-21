@@ -38,7 +38,7 @@ impl Groth16Verifier {
         let vk = VK::deserialize(&mut &Vec::<u8>::from(vk)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize vk."));
         let proof = Proof::deserialize(&mut &Vec::<u8>::from(proof)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize proof."));
         let input = Vec::<Fr>::deserialize(&mut &Vec::<u8>::from(input)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize input."));
-        let res = alt_bn128_groth16verify(vk, proof, input);
+        let res = verifier::native::alt_bn128_groth16verify(vk, proof, input);
         if res {
             env::used_gas()
         } else {
