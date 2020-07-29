@@ -22,7 +22,7 @@ version = "0.5.6"
 
 [dependencies.bn_borsh]
 package = "borsh"
-version = "0.6.2"
+version = "0.7.0"
 
 
 [profile.release]

@@ -32,7 +32,7 @@ pub struct CNote<'a, CS: ConstraintSystem> {
 
 #[derive(Clone, Signal)]
 #[Value = "TransferPub<P>"]
-pub struct CTransferPub<'a, CS: ConstraintSystem, P: PoolParams<F = CS::F>> {
+pub struct CTransferPub<'a, CS: ConstraintSystem, P: PoolParams<Fr = CS::F>> {
     pub root: CNum<'a, CS>,
     pub nullifier: SizedVec<CNum<'a, CS>, P::IN>,
     pub out_hash: SizedVec<CNum<'a, CS>, P::OUT>,
@@ -42,14 +42,14 @@ pub struct CTransferPub<'a, CS: ConstraintSystem, P: PoolParams<F = CS::F>> {
 
 #[derive(Clone, Signal)]
 #[Value = "Tx<P>"]
-pub struct CTx<'a, CS: ConstraintSystem, P: PoolParams<F = CS::F>> {
+pub struct CTx<'a, CS: ConstraintSystem, P: PoolParams<Fr = CS::F>> {
     pub input: SizedVec<CNote<'a, CS>, P::IN>,
     pub output: SizedVec<CNote<'a, CS>, P::OUT>,
 }
 
 #[derive(Clone, Signal)]
 #[Value = "TransferSec<P>"]
-pub struct CTransferSec<'a, CS: ConstraintSystem, P: PoolParams<F = CS::F>> {
+pub struct CTransferSec<'a, CS: ConstraintSystem, P: PoolParams<Fr = CS::F>> {
     pub tx: CTx<'a, CS, P>,
     pub in_proof: SizedVec<CMerkleProof<'a, CS, P::H>, P::IN>,
     pub eddsa_s: CNum<'a, CS>,
@@ -57,19 +57,19 @@ pub struct CTransferSec<'a, CS: ConstraintSystem, P: PoolParams<F = CS::F>> {
     pub eddsa_a: CNum<'a, CS>,
 }
 
-pub fn c_nullfifier<'a, CS: ConstraintSystem, P: PoolParams<F = CS::F>>(
+pub fn c_nullfifier<'a, CS: ConstraintSystem, P: PoolParams<Fr = CS::F>>(
     note_hash: &CNum<'a, CS>,
-    pk: &CNum<'a, CS>,
+    xsk: &CNum<'a, CS>,
     params: &P,
 ) -> CNum<'a, CS> {
     c_poseidon_with_salt(
-        [note_hash.clone(), pk.clone()].as_ref(),
+        [note_hash.clone(), xsk.clone()].as_ref(),
         SEED_NULLIFIER,
         params.compress(),
     )
 }
 
-pub fn c_note_hash<'a, CS: ConstraintSystem, P: PoolParams<F = CS::F>>(
+pub fn c_note_hash<'a, CS: ConstraintSystem, P: PoolParams<Fr = CS::F>>(
     note: &CNote<'a, CS>,
     params: &P,
 ) -> CNum<'a, CS> {
@@ -86,7 +86,7 @@ pub fn c_note_hash<'a, CS: ConstraintSystem, P: PoolParams<F = CS::F>>(
     )
 }
 
-pub fn c_tx_hash<'a, CS: ConstraintSystem, P: PoolParams<F = CS::F>>(
+pub fn c_tx_hash<'a, CS: ConstraintSystem, P: PoolParams<Fr = CS::F>>(
     in_note_hash: &[CNum<'a, CS>],
     out_note_hash: &[CNum<'a, CS>],
     params: &P,
@@ -99,34 +99,34 @@ pub fn c_tx_hash<'a, CS: ConstraintSystem, P: PoolParams<F = CS::F>>(
     c_poseidon_with_salt(&notes, SEED_TX_HASH, params.tx())
 }
 
-pub fn c_tx_verify<'a, CS: ConstraintSystem, P: PoolParams<F = CS::F>>(
+pub fn c_tx_verify<'a, CS: ConstraintSystem, P: PoolParams<Fr = CS::F>>(
     s: &CNum<'a, CS>,
     r: &CNum<'a, CS>,
-    pk: &CNum<'a, CS>,
+    xsk: &CNum<'a, CS>,
     tx_hash: &CNum<'a, CS>,
     params: &P,
 ) -> CBool<'a, CS> {
-    c_eddsaposeidon_verify(s, r, pk, tx_hash, params.eddsa(), params.jubjub())
+    c_eddsaposeidon_verify(s, r, xsk, tx_hash, params.eddsa(), params.jubjub())
 }
 
-pub fn c_derive_key_dk<'a, CS: ConstraintSystem, P: PoolParams<F = CS::F>>(
-    pk: &CNum<'a, CS>,
+pub fn c_derive_key_dk<'a, CS: ConstraintSystem, P: PoolParams<Fr = CS::F>>(
+    xsk: &CNum<'a, CS>,
     params: &P,
 ) -> Vec<CBool<'a, CS>> {
-    let cs = pk.get_cs();
-    let t_dk = c_poseidon_with_salt(&[pk.clone()], SEED_DECRYPTION_KEY, params.hash());
+    let cs = xsk.get_cs();
+    let t_dk = c_poseidon_with_salt(&[xsk.clone()], SEED_DECRYPTION_KEY, params.hash());
     let dk_value = t_dk
         .get_value()
-        .map(|v| v.into_other::<<P::J as JubJubParams>::Fs>().into_other());
+        .map(|v| v.into_other::<P::Fs>().into_other());
     let dk = CNum::alloc(cs, dk_value.as_ref());
 
     let g = CEdwardsPoint::from_const(cs, params.jubjub().edwards_g());
 
     let t_dk_bits = c_into_bits_le_strict(&t_dk);
-    let dk_bits = c_into_bits_le(&dk, <P::J as JubJubParams>::Fs::NUM_BITS as usize);
+    let dk_bits = c_into_bits_le(&dk, P::Fs::NUM_BITS as usize);
     c_comp_constant(
         &dk_bits,
-        Num::<<P::J as JubJubParams>::Fs>::from(-1).into_other(),
+        Num::<P::Fs>::from(-1).into_other(),
     )
     .assert_false();
     (g.mul(&t_dk_bits, params.jubjub()).x - g.mul(&dk_bits, params.jubjub()).x).assert_zero();
@@ -134,7 +134,7 @@ pub fn c_derive_key_dk<'a, CS: ConstraintSystem, P: PoolParams<F = CS::F>>(
     dk_bits
 }
 
-pub fn c_derive_key_pk_d<'a, CS: ConstraintSystem, P: PoolParams<F = CS::F>>(
+pub fn c_derive_key_pk_d<'a, CS: ConstraintSystem, P: PoolParams<Fr = CS::F>>(
     d: &CNum<'a, CS>,
     dk: &[CBool<'a, CS>],
     params: &P,
@@ -150,7 +150,7 @@ pub fn c_parse_delta<'a, CS: ConstraintSystem>(delta: &CNum<'a, CS>) -> CNum<'a,
     delta - &delta_bits[63].0 * num!(BigUint::one() << (NOTE_CHUNKS[2] * 8))
 }
 
-pub fn c_transfer<'a, CS: ConstraintSystem, P: PoolParams<F = CS::F>>(
+pub fn c_transfer<'a, CS: ConstraintSystem, P: PoolParams<Fr = CS::F>>(
     p: &CTransferPub<'a, CS, P>,
     s: &CTransferSec<'a, CS, P>,
     params: &P,
@@ -246,7 +246,7 @@ mod tx_test {
     use fawkes_crypto::core::cs::TestCS;
     use fawkes_crypto::native::bn256::Fr;
     use crate::{POOL_PARAMS};
-    use std::time::{Duration, Instant};
+    use std::time::{Instant};
 
     #[test]
     fn test_circuit_tx() {

@@ -1,4 +1,4 @@
-use borsh::{BorshDeserialize, BorshSerialize};
+use fawkes_crypto::borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Serialize, ser::{Serializer}, Deserialize, de::{Deserializer, self}};
 use num::BigUint;
 use core::str::FromStr;

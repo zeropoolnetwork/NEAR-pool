@@ -11,6 +11,7 @@ use fawkes_crypto::core::{
 };
 use num::bigint::Sign;
 use num::bigint::{BigInt, BigUint};
+use crate::native::data::rand_biguint;
 
 use crate::constants::{
     SEED_DECRYPTION_KEY, SEED_DIVERSIFIER, SEED_NOTE_HASH, SEED_NULLIFIER, SEED_TX_HASH,
@@ -24,20 +25,23 @@ use typenum::Unsigned;
 use fawkes_crypto::borsh::{BorshDeserialize, BorshSerialize};
 use fawkes_crypto::native::bn256::{Fr, JubJubBN256};
 use sha3::{Digest, Keccak256};
+use rand::{Rand, Rng};
 
 pub trait PoolParams: Clone + Sized {
-    type F: Field;
-    type J: JubJubParams<Fr = Self::F>;
+    type Fr: Field;
+    type Fs: Field;
+    type J: JubJubParams<Fr = Self::Fr, Fs = Self::Fs>;
     type IN: Unsigned;
     type OUT: Unsigned;
     type H: Unsigned;
+    
 
     fn jubjub(&self) -> &Self::J;
-    fn hash(&self) -> &PoseidonParams<Self::F>;
-    fn compress(&self) -> &PoseidonParams<Self::F>;
-    fn note(&self) -> &PoseidonParams<Self::F>;
-    fn tx(&self) -> &PoseidonParams<Self::F>;
-    fn eddsa(&self) -> &PoseidonParams<Self::F>;
+    fn hash(&self) -> &PoseidonParams<Self::Fr>;
+    fn compress(&self) -> &PoseidonParams<Self::Fr>;
+    fn note(&self) -> &PoseidonParams<Self::Fr>;
+    fn tx(&self) -> &PoseidonParams<Self::Fr>;
+    fn eddsa(&self) -> &PoseidonParams<Self::Fr>;
 }
 
 #[derive(Clone)]
@@ -52,7 +56,8 @@ pub struct PoolBN256<IN: Unsigned, OUT: Unsigned, H: Unsigned> {
 }
 
 impl<IN: Unsigned, OUT: Unsigned, H: Unsigned> PoolParams for PoolBN256<IN, OUT, H> {
-    type F = Fr;
+    type Fr = Fr;
+    type Fs = <JubJubBN256 as JubJubParams>::Fs;
     type J = JubJubBN256;
     type IN = IN;
     type OUT = OUT;
@@ -62,23 +67,23 @@ impl<IN: Unsigned, OUT: Unsigned, H: Unsigned> PoolParams for PoolBN256<IN, OUT,
         &self.jubjub
     }
 
-    fn hash(&self) -> &PoseidonParams<Self::F> {
+    fn hash(&self) -> &PoseidonParams<Self::Fr> {
         &self.hash
     }
 
-    fn compress(&self) -> &PoseidonParams<Self::F> {
+    fn compress(&self) -> &PoseidonParams<Self::Fr> {
         &self.compress
     }
 
-    fn note(&self) -> &PoseidonParams<Self::F> {
+    fn note(&self) -> &PoseidonParams<Self::Fr> {
         &self.note
     }
 
-    fn tx(&self) -> &PoseidonParams<Self::F> {
+    fn tx(&self) -> &PoseidonParams<Self::Fr> {
         &self.tx
     }
 
-    fn eddsa(&self) -> &PoseidonParams<Self::F> {
+    fn eddsa(&self) -> &PoseidonParams<Self::Fr> {
         &self.eddsa
     }
 }
@@ -93,6 +98,21 @@ pub struct Note<F: Field> {
     pub v: Num<F>,
     pub st: Num<F>,
 }
+
+
+
+impl<Fr:Field> Rand for Note<Fr> {
+    fn rand<R: Rng>(rng: &mut R) -> Self {
+        Self {
+            d: num!(rand_biguint(rng, NOTE_CHUNKS[0] * 8)),
+            pk_d: num!(rand_biguint(rng, NOTE_CHUNKS[1] * 8)),
+            v: num!(rand_biguint(rng, NOTE_CHUNKS[2] * 8 / 2)),
+            st: num!(rand_biguint(rng, NOTE_CHUNKS[3] * 8)),
+        }
+    }
+}
+
+
 
 fn to_compressed(buf: &[u8], num_size: usize, chunks: &[usize]) -> Result<Vec<u8>, io::Error> {
     let buf_len = buf.len();
@@ -176,28 +196,28 @@ impl<T: Field> BorshDeserialize for Note<T> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(bound(serialize = "", deserialize = ""))]
 pub struct Tx<P: PoolParams> {
-    pub input: SizedVec<Note<P::F>, P::IN>,
-    pub output: SizedVec<Note<P::F>, P::OUT>,
+    pub input: SizedVec<Note<P::Fr>, P::IN>,
+    pub output: SizedVec<Note<P::Fr>, P::OUT>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(bound(serialize = "", deserialize = ""))]
 pub struct TransferPub<P: PoolParams> {
-    pub root: Num<P::F>,
-    pub nullifier: SizedVec<Num<P::F>, P::IN>,
-    pub out_hash: SizedVec<Num<P::F>, P::OUT>,
-    pub delta: Num<P::F>,
-    pub memo: Num<P::F>,
+    pub root: Num<P::Fr>,
+    pub nullifier: SizedVec<Num<P::Fr>, P::IN>,
+    pub out_hash: SizedVec<Num<P::Fr>, P::OUT>,
+    pub delta: Num<P::Fr>,
+    pub memo: Num<P::Fr>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(bound(serialize = "", deserialize = ""))]
 pub struct TransferSec<P: PoolParams> {
     pub tx: Tx<P>,
-    pub in_proof: SizedVec<MerkleProof<P::F, P::H>, P::IN>,
-    pub eddsa_s: Num<P::F>,
-    pub eddsa_r: Num<P::F>,
-    pub eddsa_a: Num<P::F>,
+    pub in_proof: SizedVec<MerkleProof<P::Fr, P::H>, P::IN>,
+    pub eddsa_s: Num<P::Fr>,
+    pub eddsa_r: Num<P::Fr>,
+    pub eddsa_a: Num<P::Fr>,
 }
 
 fn xor_crypt<D: Digest + Clone>(prefix: &D, data: &[u8]) -> Vec<u8> {
@@ -219,9 +239,9 @@ fn dh_prefix<F: Field>(dh_x: Num<F>, h: &[u8]) -> Keccak256 {
 }
 
 pub fn note_encrypt<P: PoolParams>(
-    esk: Num<<P::J as JubJubParams>::Fs>,
-    dk: Num<<P::J as JubJubParams>::Fs>,
-    note: Note<P::F>,
+    esk: Num<P::Fs>,
+    dk: Num<P::Fs>,
+    note: Note<P::Fr>,
     params: &P,
 ) -> Vec<u8> {
     let pk_d = EdwardsPoint::subgroup_decompress(note.pk_d, params.jubjub()).unwrap();
@@ -248,11 +268,11 @@ pub fn note_encrypt<P: PoolParams>(
 }
 
 fn note_decrypt<P: PoolParams>(
-    dk: Num<<P::J as JubJubParams>::Fs>,
-    epk: Num<P::F>,
+    dk: Num<P::Fs>,
+    epk: Num<P::Fr>,
     note_data: &[u8],
     params: &P,
-) -> Option<Note<P::F>> {
+) -> Option<Note<P::Fr>> {
     let epk = EdwardsPoint::subgroup_decompress(epk, params.jubjub())?;
     let dh = epk.mul(dk, params.jubjub());
 
@@ -275,12 +295,12 @@ fn note_decrypt<P: PoolParams>(
 }
 
 pub fn note_decrypt_in<P: PoolParams>(
-    dk: Num<<P::J as JubJubParams>::Fs>,
+    dk: Num<P::Fs>,
     msg_data: &[u8],
     params: &P,
-) -> Option<Note<P::F>> {
+) -> Option<Note<P::Fr>> {
     let note_size: usize = NOTE_CHUNKS.iter().sum();
-    let num_size = (P::F::NUM_BITS as usize - 1) / 8 + 1;
+    let num_size = (P::Fr::NUM_BITS as usize - 1) / 8 + 1;
     if msg_data.len() != 32 + 2 * num_size + note_size {
         None
     } else {
@@ -290,12 +310,12 @@ pub fn note_decrypt_in<P: PoolParams>(
 }
 
 pub fn note_decrypt_out<P: PoolParams>(
-    dk: Num<<P::J as JubJubParams>::Fs>,
+    dk: Num<P::Fs>,
     msg_data: &[u8],
     params: &P,
-) -> Option<Note<P::F>> {
+) -> Option<Note<P::Fr>> {
     let note_size: usize = NOTE_CHUNKS.iter().sum();
-    let num_size = (P::F::NUM_BITS as usize - 1) / 8 + 1;
+    let num_size = (P::Fr::NUM_BITS as usize - 1) / 8 + 1;
     if msg_data.len() != 32 + 2 * num_size + note_size {
         None
     } else {
@@ -304,11 +324,11 @@ pub fn note_decrypt_out<P: PoolParams>(
     }
 }
 
-pub fn nullfifier<P: PoolParams>(note_hash: Num<P::F>, pk: Num<P::F>, params: &P) -> Num<P::F> {
-    poseidon_with_salt(&[note_hash, pk], SEED_NULLIFIER, params.compress())
+pub fn nullfifier<P: PoolParams>(note_hash: Num<P::Fr>, xsk: Num<P::Fr>, params: &P) -> Num<P::Fr> {
+    poseidon_with_salt(&[note_hash, xsk], SEED_NULLIFIER, params.compress())
 }
 
-pub fn note_hash<P: PoolParams>(note: Note<P::F>, params: &P) -> Num<P::F> {
+pub fn note_hash<P: PoolParams>(note: Note<P::Fr>, params: &P) -> Num<P::Fr> {
     poseidon_with_salt(
         &[note.d, note.pk_d, note.v, note.st],
         SEED_NOTE_HASH,
@@ -317,10 +337,10 @@ pub fn note_hash<P: PoolParams>(note: Note<P::F>, params: &P) -> Num<P::F> {
 }
 
 pub fn tx_hash<P: PoolParams>(
-    in_note_hash: &[Num<P::F>],
-    out_note_hash: &[Num<P::F>],
+    in_note_hash: &[Num<P::Fr>],
+    out_note_hash: &[Num<P::Fr>],
     params: &P,
-) -> Num<P::F> {
+) -> Num<P::Fr> {
     let notes = in_note_hash
         .iter()
         .chain(out_note_hash.iter())
@@ -330,40 +350,40 @@ pub fn tx_hash<P: PoolParams>(
 }
 
 pub fn tx_sign<P: PoolParams>(
-    sk: Num<<P::J as JubJubParams>::Fs>,
-    tx_hash: Num<P::F>,
+    sk: Num<P::Fs>,
+    tx_hash: Num<P::Fr>,
     params: &P,
-) -> (Num<<P::J as JubJubParams>::Fs>, Num<P::F>) {
+) -> (Num<P::Fs>, Num<P::Fr>) {
     eddsaposeidon_sign(sk, tx_hash, params.eddsa(), params.jubjub())
 }
 
 pub fn tx_verify<P: PoolParams>(
-    s: Num<<P::J as JubJubParams>::Fs>,
-    r: Num<P::F>,
-    pk: Num<P::F>,
-    tx_hash: Num<P::F>,
+    s: Num<P::Fs>,
+    r: Num<P::Fr>,
+    xsk: Num<P::Fr>,
+    tx_hash: Num<P::Fr>,
     params: &P,
 ) -> bool {
-    eddsaposeidon_verify(s, r, pk, tx_hash, params.eddsa(), params.jubjub())
+    eddsaposeidon_verify(s, r, xsk, tx_hash, params.eddsa(), params.jubjub())
 }
 
-pub fn derive_key_pk<P: PoolParams>(
-    sk: Num<<P::J as JubJubParams>::Fs>,
+pub fn derive_key_xsk<P: PoolParams>(
+    sk: Num<P::Fs>,
     params: &P,
-) -> EdwardsPoint<P::F> {
+) -> EdwardsPoint<P::Fr> {
     params.jubjub().edwards_g().mul(sk, params.jubjub())
 }
 
-pub fn derive_key_dk<P: PoolParams>(pk: Num<P::F>, params: &P) -> Num<<P::J as JubJubParams>::Fs> {
-    let t_dk = poseidon_with_salt(&[pk], SEED_DECRYPTION_KEY, params.hash());
-    t_dk.into_other::<<P::J as JubJubParams>::Fs>().into_other()
+pub fn derive_key_dk<P: PoolParams>(xsk: Num<P::Fr>, params: &P) -> Num<P::Fs> {
+    let t_dk = poseidon_with_salt(&[xsk], SEED_DECRYPTION_KEY, params.hash());
+    t_dk.into_other::<P::Fs>().into_other()
 }
 
 pub fn derive_key_pk_d<P: PoolParams>(
-    d: Num<P::F>,
-    dk: Num<<P::J as JubJubParams>::Fs>,
+    d: Num<P::Fr>,
+    dk: Num<P::Fs>,
     params: &P,
-) -> EdwardsPoint<P::F> {
+) -> EdwardsPoint<P::Fr> {
     let d_hash = poseidon_with_salt(&[d], SEED_DIVERSIFIER, params.hash());
     EdwardsPoint::from_scalar(d_hash, params.jubjub()).mul(dk, params.jubjub())
 }
@@ -390,16 +410,6 @@ mod tx_test {
     use num::BigUint;
     use rand::{thread_rng, Rand, Rng};
 
-    impl Rand for Note<Fr> {
-        fn rand<R: Rng>(rng: &mut R) -> Self {
-            Self {
-                d: num!(rand_biguint(rng, NOTE_CHUNKS[0] * 8)),
-                pk_d: num!(rand_biguint(rng, NOTE_CHUNKS[1] * 8)),
-                v: num!(rand_biguint(rng, NOTE_CHUNKS[2] * 8)),
-                st: num!(rand_biguint(rng, NOTE_CHUNKS[3] * 8)),
-            }
-        }
-    }
 
     #[test]
     fn test_encryption() {

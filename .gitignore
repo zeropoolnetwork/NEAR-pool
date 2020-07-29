@@ -1,1 +1,6 @@
 /target
+inputs.txt
+object.json
+params.bin
+proof.txt
+verification_key.txt

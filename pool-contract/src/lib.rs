@@ -3,7 +3,7 @@ pub mod verifier;
 use borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::collections::TreeMap;
 use near_sdk::{env, near_bindgen, json_types::Base64VecU8};
-use verifier::{alt_bn128_g1_multiexp, alt_bn128_g1_neg, alt_bn128_groth16verify, alt_bn128_pairing_check, Fq, Fr, Fq2, G1, G2, VK, Proof};
+use verifier::{alt_bn128_groth16verify, Fr, VK, Proof};
 
 
 #[global_allocator]
@@ -76,6 +76,7 @@ mod tests {
     use near_sdk::{testing_env, VMContext};
     use serde::{Serialize, Deserialize};
     use serde_json;
+    use verifier::{Fq2, G2};
 
     pub trait RevOrdering {
         fn rev_ordering(&mut self);

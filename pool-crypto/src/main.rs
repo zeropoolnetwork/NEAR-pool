@@ -31,8 +31,10 @@ pub type IN = U6;
 pub type OUT = U2;
 pub type H = U32;
 
+pub type TPoolParams = PoolBN256::<IN, OUT, H>;
+
 lazy_static! {
-    pub static ref POOL_PARAMS: PoolBN256<IN, OUT, H> = PoolBN256::<IN, OUT, H> {
+    pub static ref POOL_PARAMS: TPoolParams = TPoolParams {
         jubjub: JubJubBN256::new(),
         hash: PoseidonParams::<Fr>::new(2, 8, 53),
         compress: PoseidonParams::<Fr>::new(3, 8, 53),
@@ -42,6 +44,7 @@ lazy_static! {
         phantom: PhantomData
     };
 }
+
 
 groth16_near_bindings!(
     cli,
