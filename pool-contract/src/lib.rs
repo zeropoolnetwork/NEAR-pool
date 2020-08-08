@@ -1,76 +1,228 @@
-pub mod verifier;
+mod verifier;
 
-use borsh::{BorshDeserialize, BorshSerialize};
-use near_sdk::collections::TreeMap;
-use near_sdk::{env, near_bindgen, json_types::Base64VecU8};
-use verifier::{alt_bn128_groth16verify, Fr, VK, Proof};
+use near_sdk::collections::{Vector, UnorderedSet};
+use near_sdk::{env, near_bindgen};
+use verifier::{alt_bn128_groth16verify, U256, VK, Proof};
+use ff_uint::borsh::{BorshSerialize, BorshDeserialize};
+use ff_uint::Uint;
 
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+
+// Using UnorderedSet as table with primary index is OK, because we will not remove nullifiers and root history from the set.
+
+// todo get values from pool-crypto
+const UTXO_IN: usize = 6;
+const UTXO_OUT: usize = 2;
+
+
+fn is_unique<T:Eq+Ord+Clone>(items:&[T]) -> bool {
+    let mut v:Vec<T> = items.iter().cloned().collect();
+    v.sort();
+    for i in 1..v.len() {
+        if v[i-1] == v[i] {
+            return false;
+        }
+    }
+    return true;
+}
+
+
+#[derive(BorshDeserialize, BorshSerialize)]
+pub struct TransferAndUpdateRoot {
+    pub root: U256,
+    pub nullifier: [U256; UTXO_IN],
+    pub out_hash: [U256; UTXO_OUT],
+    pub delta: U256,
+    pub memo: U256,
+    pub message: Vec<u8>,
+    pub before_root: U256,
+    pub after_root: U256,
+}
+
+impl TransferAndUpdateRoot {
+    pub fn input_vec_transfer(&self)-> Vec<U256> {
+        let mut res = Vec::with_capacity(3+UTXO_IN+UTXO_OUT);
+        res.push(self.root);
+        for i in 0..UTXO_IN {
+            res.push(self.nullifier[i]);
+        }
+        for i in 0..UTXO_OUT {
+            res.push(self.out_hash[i]);
+        }
+        res.push(self.delta);
+        res.push(self.memo);
+        res
+    }
+
+    pub fn input_vec_update_root(&self, pos:u64)-> Vec<U256> {
+        let mut res = Vec::with_capacity(3+UTXO_OUT);
+        res.push(self.before_root);
+        res.push(self.after_root);
+        res.push(U256::from(pos));
+        for i in 0..UTXO_OUT {
+            res.push(self.out_hash[i]);
+        }
+        res
+    }
+}
+
 #[near_bindgen]
-#[derive(Default, BorshDeserialize, BorshSerialize)]
-pub struct Groth16Verifier {
-    pub n_calls:u64,
-    pub res_calls: TreeMap<u64,bool>
+#[derive(BorshDeserialize, BorshSerialize)]
+pub struct PrivateTxEngine {
+    pub nullifier:UnorderedSet<U256>,
+    pub root_history:UnorderedSet<U256>,
+    pub utxo:UnorderedSet<U256>,
+    pub message:Vector<Vec<u8>>,
+    pub vk_tx:VK,
+    pub vk_update_root:VK
 }
 
 
 #[near_bindgen]
-impl Groth16Verifier {
-    pub fn n_calls(&self) -> u64 {
-        self.n_calls
+impl PrivateTxEngine {
+
+    #[result_serializer(borsh)]
+    pub fn num_tx(&self) -> u64 {
+        self.root_history.len()-1
     }
 
-    pub fn get_call(&self, n:u64) -> Option<bool> {
-        self.res_calls.get(&n)
+    #[result_serializer(borsh)]
+    pub fn current_root(&self) -> U256 {
+        self.root_history.as_vector().get(self.num_tx()).unwrap_or_else(|| {
+            env::panic(b"vector index overflow")
+        })
     }
 
-    pub fn groth16verify(&self, vk: Base64VecU8, proof:Base64VecU8, input:Base64VecU8) -> bool {
-        let vk = VK::deserialize(&mut &Vec::<u8>::from(vk)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize vk."));
-        let proof = Proof::deserialize(&mut &Vec::<u8>::from(proof)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize proof."));
-        let input = Vec::<Fr>::deserialize(&mut &Vec::<u8>::from(input)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize input."));
-        alt_bn128_groth16verify(vk, proof, input)
+    #[result_serializer(borsh)]
+    pub fn is_nullifier(&self, #[serializer(borsh)] nullifier:U256) -> bool {
+        self.nullifier.contains(&nullifier)
     }
 
-    pub fn groth16verify_native(&self, vk: Base64VecU8, proof:Base64VecU8, input:Base64VecU8) -> u64 {
-        let vk = VK::deserialize(&mut &Vec::<u8>::from(vk)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize vk."));
-        let proof = Proof::deserialize(&mut &Vec::<u8>::from(proof)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize proof."));
-        let input = Vec::<Fr>::deserialize(&mut &Vec::<u8>::from(input)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize input."));
-        let res = verifier::native::alt_bn128_groth16verify_native(vk, proof, input);
-        if res {
-            env::used_gas()
-        } else {
-            0
+    #[result_serializer(borsh)]
+    pub fn is_utxo(&self, #[serializer(borsh)] utxo:U256) -> bool {
+        self.utxo.contains(&utxo)
+    }
+
+    #[result_serializer(borsh)]
+    pub fn is_root_history(&self, #[serializer(borsh)] root_history:U256) -> bool {
+        self.root_history.contains(&root_history)
+    }
+
+    #[result_serializer(borsh)]
+    pub fn get_nullifier_slice(&self, #[serializer(borsh)] from:u64, #[serializer(borsh)] to:u64) -> Vec<U256> {
+        let mut result = vec![];
+        for i in from .. to {
+            if let Some(value) = self.nullifier.as_vector().get(i) {
+                result.push(value);
+            }
         }
+        result
     }
 
-    pub fn groth16verify_log(&mut self, vk: Base64VecU8, proof:Base64VecU8, input:Base64VecU8) -> u64 {
-        let vk = VK::deserialize(&mut &Vec::<u8>::from(vk)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize vk."));
-        let proof = Proof::deserialize(&mut &Vec::<u8>::from(proof)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize proof."));
-        let input = Vec::<Fr>::deserialize(&mut &Vec::<u8>::from(input)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize input."));
-        let res = alt_bn128_groth16verify(vk, proof, input);
-        self.res_calls.insert(&self.n_calls, &res);
-        self.n_calls+=1;
-        env::used_gas()
+    #[result_serializer(borsh)]
+    pub fn get_utxo_slice(&self, #[serializer(borsh)] from:u64, #[serializer(borsh)] to:u64) -> Vec<U256> {
+        let mut result = vec![];
+        for i in from .. to {
+            if let Some(value) = self.utxo.as_vector().get(i) {
+                result.push(value);
+            }
+        }
+        result
     }
 
-    pub fn groth16verify_log_native(&mut self, vk: Base64VecU8, proof:Base64VecU8, input:Base64VecU8) -> u64{
-        let vk = VK::deserialize(&mut &Vec::<u8>::from(vk)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize vk."));
-        let proof = Proof::deserialize(&mut &Vec::<u8>::from(proof)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize proof."));
-        let input = Vec::<Fr>::deserialize(&mut &Vec::<u8>::from(input)[..]).unwrap_or_else(|_| env::panic(b"Cannot deserialize input."));
-        let res = verifier::native::alt_bn128_groth16verify_native(vk, proof, input);
-        self.res_calls.insert(&self.n_calls, &res);
-        self.n_calls+=1;
-        env::used_gas()
-    }    
+    #[result_serializer(borsh)]
+    pub fn get_root_history_slice(&self, #[serializer(borsh)] from:u64, #[serializer(borsh)] to:u64) -> Vec<U256> {
+        let mut result = vec![];
+        for i in from .. to {
+            if let Some(value) = self.root_history.as_vector().get(i) {
+                result.push(value);
+            }
+        }
+        result
+    }
 
+    #[result_serializer(borsh)]
+    pub fn get_message_slice(&self, #[serializer(borsh)] from:u64, #[serializer(borsh)] to:u64) -> Vec<Vec<u8>> {
+        let mut result = vec![];
+        for i in from .. to {
+            if let Some(value) = self.message.get(i) {
+                result.push(value);
+            }
+        }
+        result
+    }
+
+
+
+
+
+    //TODO implement deposit and withdrawal
+    #[result_serializer(borsh)]
+    pub fn transfer_and_update_root(&mut self, 
+        #[serializer(borsh)]  transfer_proof:Proof, 
+        #[serializer(borsh)]  update_root_proof:Proof, 
+        #[serializer(borsh)]  txobj: TransferAndUpdateRoot
+    ) -> bool
+    {
+        if !is_unique(&txobj.nullifier) {
+            env::panic(b"not unique nullifier in transaction");
+        }
+
+        if !is_unique(&txobj.out_hash) {
+            env::panic(b"not unique utxo in transaction");
+        }
+
+        if txobj.nullifier.iter().any(|&e| self.is_nullifier(e)) {
+            env::panic(b"not unique nullifier in history");
+        }
+
+        if txobj.out_hash.iter().any(|&e| self.is_utxo(e)) {
+            env::panic(b"not unique utxo in history");
+        }
+
+        if !self.is_root_history(txobj.root) {
+            env::panic(b"no root in history");
+        }
+
+        if txobj.memo != U256::try_from_slice(&env::keccak256(&txobj.message)).unwrap() {
+            env::panic(b"wrong memo hash");
+        }
+
+        if self.current_root() != txobj.before_root {
+            env::panic(b"wrong current root");
+        }
+        
+        if !alt_bn128_groth16verify(&self.vk_tx, &transfer_proof, &txobj.input_vec_transfer()) {
+            env::panic(b"wrong transfer snark check");
+        }
+
+        if !alt_bn128_groth16verify(&self.vk_update_root, &update_root_proof, &txobj.input_vec_update_root(self.num_tx() * UTXO_OUT as u64)) {
+            env::panic(b"wrong update root snark check");
+        }
+
+        for e in txobj.nullifier.iter() {
+            self.nullifier.insert(e);
+        }
+
+        for e in txobj.out_hash.iter() {
+            self.utxo.insert(e);
+        }
+        
+        self.message.push(&txobj.message);
+        self.root_history.insert(&txobj.after_root);
+
+        //TODO implement deposit and withdrawal logic
+
+        return true;
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
-mod tests {
+mod tests { /*
     use super::*;
     use near_sdk::MockedBlockchain;
     use near_sdk::{testing_env, VMContext};
@@ -186,5 +338,6 @@ mod tests {
             epoch_height: 0,
         }
     }
+    */
 
 }

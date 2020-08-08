@@ -296,7 +296,7 @@ impl<'p, 'db, 'w, P: PoolParams, DB:KeyValueDB, W:Wallet<P>> ClientState<'p, 'db
             };
 
             let memo = {
-                let mut h = Keccak256::new();
+                let mut h = Keccak256::new(); 
                 h.update(&assets);
                 let hash = h.finalize();
                 Num::from_binary_be(&hash)

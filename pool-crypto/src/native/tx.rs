@@ -424,6 +424,8 @@ mod tx_test {
         note.pk_d = r_pk_d;
 
         let msg = note_encrypt(esk, dk, note, &*POOL_PARAMS);
+        println!("Msg size: {}", msg.len());
+
         let note1 = note_decrypt_out(dk, &msg, &*POOL_PARAMS).unwrap();
         let note2 = note_decrypt_in(r_dk, &msg, &*POOL_PARAMS).unwrap();
 
