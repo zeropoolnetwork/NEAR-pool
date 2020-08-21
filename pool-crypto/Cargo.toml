@@ -10,6 +10,7 @@ crate-type = ["rlib"]
 [[bin]]
 path = "src/main.rs"
 name = "pool-prover"
+required-features = ["binary"]
 
 [dependencies]
 fawkes-crypto = { path = "../../fawkes-crypto" }
@@ -42,7 +43,11 @@ default-features = false
 [dependencies.clap]
 version = "3.0.0-beta.1"
 package = "clap-v3"
+optional = true
 
 [dependencies.pairing]
 version = "=0.18"
 package = "pairing_ce"
+
+[features]
+binary = ["clap"]
