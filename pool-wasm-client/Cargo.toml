@@ -1,0 +1,35 @@
+[package]
+name = "pool-wasm-client"
+version = "0.1.0"
+authors = ["Dmitry Vdovin <voidxnull@gmail.com>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = { version = "0.2", features = ["serde-serialize"] }
+wee_alloc = { version = "0.4.5", optional = true }
+pool-circuit = { path = "../pool-crypto" }
+rand = "0.4"
+kvdb-web = "0.7"
+num = "0.2"
+wasm-bindgen-futures = "0.4.17"
+getrandom = { version = "0.1.14", features = ["wasm-bindgen"] }
+fawkes-crypto = { path = "../../fawkes-crypto" }
+serde = "1.0.114"
+js-sys = "0.3.44"
+
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.13"
+
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"
+
+# https://github.com/rustwasm/wasm-bindgen/issues/2279. Can't return a string without those.
+[package.metadata.wasm-pack.profile.dev]
+wasm-opt = false
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
